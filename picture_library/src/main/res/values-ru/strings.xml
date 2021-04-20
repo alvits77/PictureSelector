@@ -13,7 +13,7 @@
     <string name="picture_done_front_num">%1$d/%2$d Ok</string>
     <string name="picture_completed">Completed</string>
     <string name="picture_done">Complete</string>
-    <string name="picture_please_select">Пожалуйста, выберите</string>
+    <string name="picture_please_select">Пожалуйста, выберите изображения</string>
     <string name="picture_empty_title">Нет видео или фото\n</string>
     <string name="picture_empty_audio_title">Нет аудио\n</string>
     <string name="picture_audio_empty">You can use system recordings to record audio</string>
