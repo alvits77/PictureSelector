@@ -14,6 +14,9 @@ import android.graphics.Rect;
 import android.net.Uri;
 import android.text.TextUtils;
 
+import com.luck.picture.lib.PictureContentResolver;
+import com.luck.picture.lib.tools.ValueOf;
+
 import java.io.InputStream;
 import java.util.List;
 
@@ -53,7 +56,7 @@ public class SkiaImageRegionDecoder implements ImageRegionDecoder {
                 id = res.getIdentifier(resName, "drawable", packageName);
             } else if (size == 1 && TextUtils.isDigitsOnly(segments.get(0))) {
                 try {
-                    id = Integer.parseInt(segments.get(0));
+                    id = ValueOf.toInt(segments.get(0));
                 } catch (NumberFormatException ignored) {
                 }
             }
@@ -67,8 +70,7 @@ public class SkiaImageRegionDecoder implements ImageRegionDecoder {
         } else {
             InputStream inputStream = null;
             try {
-                ContentResolver contentResolver = context.getContentResolver();
-                inputStream = contentResolver.openInputStream(uri);
+                inputStream = PictureContentResolver.getContentResolverOpenInputStream(context,uri);
                 decoder = BitmapRegionDecoder.newInstance(inputStream, false);
             } finally {
                 if (inputStream != null) {

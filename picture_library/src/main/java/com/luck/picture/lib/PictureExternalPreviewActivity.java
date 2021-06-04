@@ -68,7 +68,7 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
     private ImageButton ibLeftBack;
     private TextView tvTitle;
     private PreviewViewPager viewPager;
-    private List<LocalMedia> images = new ArrayList<>();
+    private final List<LocalMedia> images = new ArrayList<>();
     private int position = 0;
     private SimpleFragmentAdapter adapter;
     private String downloadPath;
@@ -217,7 +217,7 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
 
         @Override
         public int getCount() {
-            return images != null ? images.size() : 0;
+            return images.size();
         }
 
         @Override
@@ -269,7 +269,7 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
                     path = media.getPath();
                 }
                 boolean isHttp = PictureMimeType.isHasHttp(path);
-                String mimeType = isHttp ? PictureMimeType.getImageMimeType(media.getPath()) : media.getMimeType();
+                String mimeType = isHttp && TextUtils.isEmpty(media.getMimeType()) ? PictureMimeType.getImageMimeType(media.getPath()) : media.getMimeType();
                 boolean isHasVideo = PictureMimeType.isHasVideo(mimeType);
                 ivPlay.setVisibility(isHasVideo ? View.VISIBLE : View.GONE);
                 boolean isGif = PictureMimeType.isGif(mimeType);
@@ -321,7 +321,7 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
                         if (config.isNotPreviewDownload) {
                             if (PermissionChecker.checkSelfPermission(getContext(), Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
                                 downloadPath = path;
-                                String currentMimeType = PictureMimeType.isHasHttp(path) ? PictureMimeType.getImageMimeType(media.getPath()) : media.getMimeType();
+                                String currentMimeType = PictureMimeType.isHasHttp(path) && TextUtils.isEmpty(media.getMimeType()) ? PictureMimeType.getImageMimeType(media.getPath()) : media.getMimeType();
                                 mMimeType = PictureMimeType.isJPG(currentMimeType) ? PictureMimeType.MIME_TYPE_JPEG : currentMimeType;
                                 showDownLoadDialog();
                             } else {
@@ -337,7 +337,7 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
                         if (config.isNotPreviewDownload) {
                             if (PermissionChecker.checkSelfPermission(getContext(), Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
                                 downloadPath = path;
-                                String currentMimeType = PictureMimeType.isHasHttp(path) ? PictureMimeType.getImageMimeType(media.getPath()) : media.getMimeType();
+                                String currentMimeType = PictureMimeType.isHasHttp(path) && TextUtils.isEmpty(media.getMimeType()) ? PictureMimeType.getImageMimeType(media.getPath()) : media.getMimeType();
                                 mMimeType = PictureMimeType.isJPG(currentMimeType) ? PictureMimeType.MIME_TYPE_JPEG : currentMimeType;
                                 showDownLoadDialog();
                             } else {
@@ -402,7 +402,7 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
                 boolean isHttp = PictureMimeType.isHasHttp(downloadPath);
                 showPleaseDialog();
                 if (isHttp) {
-                    PictureThreadUtils.executeByIo(new PictureThreadUtils.SimpleTask<String>() {
+                    PictureThreadUtils.executeBySingle(new PictureThreadUtils.SimpleTask<String>() {
                         @Override
                         public String doInBackground() {
                             return showLoadingImage(downloadPath);
@@ -499,14 +499,16 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
             ToastUtils.s(getContext(), getString(R.string.picture_save_error));
             return;
         }
-        PictureThreadUtils.executeByIo(new PictureThreadUtils.SimpleTask<String>() {
+        PictureThreadUtils.executeBySingle(new PictureThreadUtils.SimpleTask<String>() {
 
             @Override
             public String doInBackground() {
                 BufferedSource buffer = null;
                 try {
-                    buffer = Okio.buffer(Okio.source(Objects.requireNonNull(getContentResolver().openInputStream(inputUri))));
-                    OutputStream outputStream = getContentResolver().openOutputStream(uri);
+                    InputStream inputStream = PictureContentResolver.getContentResolverOpenInputStream(getContext(), inputUri);
+                    buffer = Okio.buffer(Okio.source(Objects.requireNonNull(inputStream)));
+
+                    OutputStream outputStream = PictureContentResolver.getContentResolverOpenOutputStream(getContext(), uri);
                     boolean bufferCopy = PictureFileUtils.bufferCopy(buffer, outputStream);
                     if (bufferCopy) {
                         return PictureFileUtils.getPath(getContext(), uri);
@@ -523,7 +525,7 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
 
             @Override
             public void onSuccess(String result) {
-                PictureThreadUtils.cancel(PictureThreadUtils.getIoPool());
+                PictureThreadUtils.cancel(PictureThreadUtils.getSinglePool());
                 onSuccessful(result);
             }
         });
@@ -567,7 +569,8 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
                     }
                     File folderDir = new File(!state.equals(Environment.MEDIA_MOUNTED)
                             ? rootDir.getAbsolutePath() : rootDir.getAbsolutePath() + File.separator + PictureMimeType.CAMERA + File.separator);
-                    if (!folderDir.exists() && folderDir.mkdirs()) {
+                    if (!folderDir.exists()) {
+                        folderDir.mkdirs();
                     }
                     String fileName = DateUtils.getCreateFileName("IMG_") + suffix;
                     File file = new File(folderDir, fileName);
@@ -575,7 +578,7 @@ public class PictureExternalPreviewActivity extends PictureBaseActivity implemen
                 }
             }
             if (outImageUri != null) {
-                outputStream = Objects.requireNonNull(getContentResolver().openOutputStream(outImageUri));
+                outputStream = PictureContentResolver.getContentResolverOpenOutputStream(getContext(), outImageUri);
                 URL u = new URL(urlPath);
                 inputStream = u.openStream();
                 inBuffer = Okio.buffer(Okio.source(inputStream));

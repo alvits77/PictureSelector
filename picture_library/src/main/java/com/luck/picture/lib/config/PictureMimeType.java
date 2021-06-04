@@ -1,8 +1,11 @@
 package com.luck.picture.lib.config;
 
 
+import android.content.ContentResolver;
 import android.content.Context;
+import android.net.Uri;
 import android.text.TextUtils;
+import android.webkit.MimeTypeMap;
 
 import com.luck.picture.lib.R;
 
@@ -98,6 +101,18 @@ public final class PictureMimeType {
         return mimeType != null && (mimeType.equals("image/gif") || mimeType.equals("image/GIF"));
     }
 
+    /**
+     * isGif
+     *
+     * @param suffix
+     * @return
+     */
+    public static boolean isGifForSuffix(String suffix) {
+        if (TextUtils.isEmpty(suffix)) {
+            return false;
+        }
+        return suffix.startsWith(".gif") || suffix.startsWith(".GIF");
+    }
 
     /**
      * isVideo
@@ -191,10 +206,32 @@ public final class PictureMimeType {
             case PictureConfig.TYPE_VIDEO:
                 return MIME_TYPE_VIDEO;
             case PictureConfig.TYPE_AUDIO:
-                return MIME_TYPE_AUDIO;
+                return MIME_TYPE_AUDIO_AMR;
             default:
                 return MIME_TYPE_IMAGE;
         }
+    }
+
+
+    /**
+     * 获取mimeType
+     *
+     * @param context
+     * @param uri
+     * @return
+     */
+    public static String getMimeTypeFromMediaContentUri(Context context, Uri uri) {
+        String mimeType;
+        if (uri.getScheme().equals(ContentResolver.SCHEME_CONTENT)) {
+            ContentResolver cr = context.getContentResolver();
+            mimeType = cr.getType(uri);
+        } else {
+            String fileExtension = MimeTypeMap.getFileExtensionFromUrl(uri
+                    .toString());
+            mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
+                    fileExtension.toLowerCase());
+        }
+        return TextUtils.isEmpty(mimeType) ? "image/jpeg" : mimeType;
     }
 
     /**
@@ -244,6 +281,41 @@ public final class PictureMimeType {
         return MIME_TYPE_IMAGE;
     }
 
+    /**
+     * 获取图片后缀
+     *
+     * @param path
+     * @return
+     */
+    public static String getLastImgType(String path) {
+        try {
+            int index = path.lastIndexOf(".");
+            if (index > 0) {
+                String imageType = path.substring(index);
+                switch (imageType) {
+                    case ".png":
+                    case ".PNG":
+                    case ".jpg":
+                    case ".jpeg":
+                    case ".JPEG":
+                    case ".WEBP":
+                    case ".bmp":
+                    case ".BMP":
+                    case ".webp":
+                    case ".gif":
+                    case ".GIF":
+                        return imageType;
+                    default:
+                        return ".png";
+                }
+            } else {
+                return ".png";
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ".png";
+        }
+    }
 
     /**
      * Picture or video
@@ -317,7 +389,11 @@ public final class PictureMimeType {
 
     public final static String JPEG = ".jpeg";
 
+    public final static String JPG = ".jpg";
+
     public final static String PNG = ".png";
+
+    public final static String WEBP = ".webp";
 
     public final static String MP4 = ".mp4";
 
@@ -336,10 +412,10 @@ public final class PictureMimeType {
     public final static String MIME_TYPE_IMAGE = "image/jpeg";
     public final static String MIME_TYPE_VIDEO = "video/mp4";
     public final static String MIME_TYPE_AUDIO = "audio/mpeg";
+    public final static String MIME_TYPE_AUDIO_AMR = "audio/amr";
 
-
-    private final static String MIME_TYPE_PREFIX_IMAGE = "image";
-    private final static String MIME_TYPE_PREFIX_VIDEO = "video";
-    private final static String MIME_TYPE_PREFIX_AUDIO = "audio";
+    public final static String MIME_TYPE_PREFIX_IMAGE = "image";
+    public final static String MIME_TYPE_PREFIX_VIDEO = "video";
+    public final static String MIME_TYPE_PREFIX_AUDIO = "audio";
 
 }

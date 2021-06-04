@@ -367,6 +367,7 @@ public class PictureParameterStyle {
         uiStyle.pictureExternalPreviewGonePreviewDelete = true;
         // 设置NavBar Color SDK Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP有效
         uiStyle.pictureNavBarColor = Color.parseColor("#393a3e");
+
         return uiStyle;
     }
 

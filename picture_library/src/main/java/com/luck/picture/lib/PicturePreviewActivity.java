@@ -3,7 +3,6 @@ package com.luck.picture.lib;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.drawable.Drawable;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Parcelable;
@@ -24,6 +23,7 @@ import com.luck.picture.lib.adapter.PictureSimpleFragmentAdapter;
 import com.luck.picture.lib.config.PictureConfig;
 import com.luck.picture.lib.config.PictureMimeType;
 import com.luck.picture.lib.config.PictureSelectionConfig;
+import com.luck.picture.lib.entity.MediaExtraInfo;
 import com.luck.picture.lib.manager.UCropManager;
 import com.luck.picture.lib.entity.LocalMedia;
 import com.luck.picture.lib.listener.OnQueryDataResultListener;
@@ -38,7 +38,6 @@ import com.luck.picture.lib.tools.ValueOf;
 import com.luck.picture.lib.tools.VoiceUtils;
 import com.luck.picture.lib.widget.PreviewViewPager;
 import com.yalantis.ucrop.UCrop;
-import com.yalantis.ucrop.model.CutInfo;
 
 import org.jetbrains.annotations.NotNull;
 
@@ -113,7 +112,7 @@ public class PicturePreviewActivity extends PictureBaseActivity implements
     @Override
     protected void initWidgets() {
         super.initWidgets();
-        mHandler = new Handler();
+        mHandler = new Handler(getMainLooper());
         mTitleBar = findViewById(R.id.titleBar);
         screenWidth = ScreenUtils.getScreenWidth(this);
         animation = AnimationUtils.loadAnimation(this, R.anim.picture_anim_modal_in);
@@ -234,6 +233,11 @@ public class PicturePreviewActivity extends PictureBaseActivity implements
             mCbOriginal.setChecked(config.isCheckOriginalImage);
             mCbOriginal.setOnCheckedChangeListener((buttonView, isChecked) -> {
                 config.isCheckOriginalImage = isChecked;
+                if (selectData.size() == 0) {
+                    if (isChecked) {
+                        onCheckedComplete();
+                    }
+                }
             });
         }
     }
@@ -605,7 +609,7 @@ public class PicturePreviewActivity extends PictureBaseActivity implements
                 if (media.getPath().equals(imageBean.getPath())
                         || media.getId() == imageBean.getId()) {
                     imageBean.setNum(media.getNum());
-                    check.setText(String.valueOf(imageBean.getNum()));
+                    check.setText(ValueOf.toString(imageBean.getNum()));
                 }
             }
         }
@@ -660,7 +664,7 @@ public class PicturePreviewActivity extends PictureBaseActivity implements
 
     protected void onSelectNumChange(boolean isRefresh) {
         this.refresh = isRefresh;
-        boolean enable = selectData != null && selectData.size() != 0;
+        boolean enable = selectData.size() != 0;
         if (enable) {
             mTvPictureOk.setEnabled(true);
             mTvPictureOk.setSelected(true);
@@ -678,7 +682,7 @@ public class PicturePreviewActivity extends PictureBaseActivity implements
                     tvMediaNum.startAnimation(animation);
                 }
                 tvMediaNum.setVisibility(View.VISIBLE);
-                tvMediaNum.setText(String.valueOf(selectData.size()));
+                tvMediaNum.setText(ValueOf.toString(selectData.size()));
                 if (PictureSelectionConfig.uiStyle != null) {
                     if (PictureSelectionConfig.uiStyle.picture_bottom_completeNormalText != 0) {
                         mTvPictureOk.setText(PictureSelectionConfig.uiStyle.picture_bottom_completeNormalText);
@@ -741,8 +745,7 @@ public class PicturePreviewActivity extends PictureBaseActivity implements
                 ToastUtils.s(getContext(), PictureMimeType.s(getContext(), image.getMimeType()));
                 return;
             }
-            String mimeType = selectData.size() > 0 ?
-                    selectData.get(0).getMimeType() : "";
+            String mimeType = selectData.size() > 0 ? selectData.get(0).getMimeType() : "";
             int currentSize = selectData.size();
             if (config.isWithVideoImage) {
                 // 混选模式
@@ -853,37 +856,11 @@ public class PicturePreviewActivity extends PictureBaseActivity implements
                     selectData.clear();
                 }
 
-                // 如果宽高为0，重新获取宽高
-                if (image.getWidth() == 0 || image.getHeight() == 0) {
-                    image.setOrientation(-1);
-                    if (PictureMimeType.isContent(image.getPath())) {
-                        if (PictureMimeType.isHasVideo(image.getMimeType())) {
-                            MediaUtils.getVideoSizeForUri(getContext(), Uri.parse(image.getPath()), image);
-                        } else if (PictureMimeType.isHasImage(image.getMimeType())) {
-                            int[] size = MediaUtils.getImageSizeForUri(getContext(), Uri.parse(image.getPath()));
-                            image.setWidth(size[0]);
-                            image.setHeight(size[1]);
-                        }
-                    } else {
-                        if (PictureMimeType.isHasVideo(image.getMimeType())) {
-                            int[] size = MediaUtils.getVideoSizeForUrl(image.getPath());
-                            image.setWidth(size[0]);
-                            image.setHeight(size[1]);
-                        } else if (PictureMimeType.isHasImage(image.getMimeType())) {
-                            int[] size = MediaUtils.getImageSizeForUrl(image.getPath());
-                            image.setWidth(size[0]);
-                            image.setHeight(size[1]);
-                        }
-                    }
-                }
-
-                // 如果有旋转信息图片宽高则是相反
-                MediaUtils.setOrientationAsynchronous(getContext(), image, config.isAndroidQChangeWH, config.isAndroidQChangeVideoWH, null);
                 selectData.add(image);
                 onSelectedChange(true, image);
                 image.setNum(selectData.size());
                 if (config.checkNumMode) {
-                    check.setText(String.valueOf(image.getNum()));
+                    check.setText(ValueOf.toString(image.getNum()));
                 }
             } else {
                 int size = selectData.size();
@@ -971,10 +948,7 @@ public class PicturePreviewActivity extends PictureBaseActivity implements
         }
         isCompleteOrSelected = true;
         isChangeSelectedData = true;
-        if (config.isCheckOriginalImage) {
-            onBackPressed();
-            return;
-        }
+
         if (config.chooseMode == PictureMimeType.ofAll() && config.isWithVideoImage) {
             bothMimeTypeWith(mimeType, image);
         } else {
@@ -989,7 +963,7 @@ public class PicturePreviewActivity extends PictureBaseActivity implements
      * @param image
      */
     private void bothMimeTypeWith(String mimeType, LocalMedia image) {
-        if (config.enableCrop) {
+        if (config.enableCrop && !config.isCheckOriginalImage) {
             isCompleteOrSelected = false;
             boolean isHasImage = PictureMimeType.isHasImage(mimeType);
             if (config.selectionMode == PictureConfig.SINGLE && isHasImage) {
@@ -997,9 +971,8 @@ public class PicturePreviewActivity extends PictureBaseActivity implements
                 UCropManager.ofCrop(this, config.originalPath, image.getMimeType());
             } else {
                 // 是图片和选择压缩并且是多张，调用批量压缩
-                ArrayList<CutInfo> cuts = new ArrayList<>();
-                int count = selectData.size();
                 int imageNum = 0;
+                int count = selectData.size();
                 for (int i = 0; i < count; i++) {
                     LocalMedia media = selectData.get(i);
                     if (media == null
@@ -1009,17 +982,6 @@ public class PicturePreviewActivity extends PictureBaseActivity implements
                     if (PictureMimeType.isHasImage(media.getMimeType())) {
                         imageNum++;
                     }
-                    CutInfo cutInfo = new CutInfo();
-                    cutInfo.setId(media.getId());
-                    cutInfo.setPath(media.getPath());
-                    cutInfo.setImageWidth(media.getWidth());
-                    cutInfo.setImageHeight(media.getHeight());
-                    cutInfo.setMimeType(media.getMimeType());
-                    cutInfo.setAndroidQToPath(media.getAndroidQToPath());
-                    cutInfo.setId(media.getId());
-                    cutInfo.setDuration(media.getDuration());
-                    cutInfo.setRealPath(media.getRealPath());
-                    cuts.add(cutInfo);
                 }
                 if (imageNum <= 0) {
                     // 全是视频
@@ -1027,7 +989,7 @@ public class PicturePreviewActivity extends PictureBaseActivity implements
                     onBackPressed();
                 } else {
                     // 图片和视频共存
-                    UCropManager.ofCrop(this, cuts);
+                    UCropManager.ofCrop(this, (ArrayList<LocalMedia>) selectData);
                 }
             }
         } else {
@@ -1042,34 +1004,14 @@ public class PicturePreviewActivity extends PictureBaseActivity implements
      * @param image
      */
     private void separateMimeTypeWith(String mimeType, LocalMedia image) {
-        if (config.enableCrop && PictureMimeType.isHasImage(mimeType)) {
+        if (config.enableCrop && !config.isCheckOriginalImage && PictureMimeType.isHasImage(mimeType)) {
             isCompleteOrSelected = false;
             if (config.selectionMode == PictureConfig.SINGLE) {
                 config.originalPath = image.getPath();
                 UCropManager.ofCrop(this, config.originalPath, image.getMimeType());
             } else {
                 // 是图片和选择压缩并且是多张，调用批量压缩
-                ArrayList<CutInfo> cuts = new ArrayList<>();
-                int count = selectData.size();
-                for (int i = 0; i < count; i++) {
-                    LocalMedia media = selectData.get(i);
-                    if (media == null
-                            || TextUtils.isEmpty(media.getPath())) {
-                        continue;
-                    }
-                    CutInfo cutInfo = new CutInfo();
-                    cutInfo.setId(media.getId());
-                    cutInfo.setPath(media.getPath());
-                    cutInfo.setImageWidth(media.getWidth());
-                    cutInfo.setImageHeight(media.getHeight());
-                    cutInfo.setMimeType(media.getMimeType());
-                    cutInfo.setAndroidQToPath(media.getAndroidQToPath());
-                    cutInfo.setId(media.getId());
-                    cutInfo.setDuration(media.getDuration());
-                    cutInfo.setRealPath(media.getRealPath());
-                    cuts.add(cutInfo);
-                }
-                UCropManager.ofCrop(this, cuts);
+                UCropManager.ofCrop(this, (ArrayList<LocalMedia>) selectData);
             }
         } else {
             onBackPressed();
@@ -1083,12 +1025,10 @@ public class PicturePreviewActivity extends PictureBaseActivity implements
             switch (requestCode) {
                 case UCrop.REQUEST_MULTI_CROP:
                     // 裁剪数据
-                    List<CutInfo> list = UCrop.getMultipleOutput(data);
-                    data.putParcelableArrayListExtra(UCrop.Options.EXTRA_OUTPUT_URI_LIST,
-                            (ArrayList<? extends Parcelable>) list);
+                    ArrayList<LocalMedia> list = UCrop.getMultipleOutput(data);
+                    data.putParcelableArrayListExtra(UCrop.Options.EXTRA_OUTPUT_URI_LIST, list);
                     // 已选数量
-                    data.putParcelableArrayListExtra(PictureConfig.EXTRA_SELECT_LIST,
-                            (ArrayList<? extends Parcelable>) selectData);
+                    data.putParcelableArrayListExtra(PictureConfig.EXTRA_SELECT_LIST, (ArrayList<? extends Parcelable>) selectData);
                     setResult(RESULT_OK, data);
                     finish();
                     break;

@@ -343,7 +343,6 @@ public class PictureSelectorUIStyle {
      */
     public int picture_adapter_item_gif_tag_background;
 
-
     /**
      * 默认样式
      *

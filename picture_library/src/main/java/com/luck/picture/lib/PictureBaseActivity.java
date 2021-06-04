@@ -5,7 +5,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -31,6 +30,7 @@ import com.luck.picture.lib.entity.LocalMediaFolder;
 import com.luck.picture.lib.immersive.ImmersiveManage;
 import com.luck.picture.lib.immersive.NavBarUtils;
 import com.luck.picture.lib.language.PictureLanguageUtils;
+import com.luck.picture.lib.listener.OnCallbackListener;
 import com.luck.picture.lib.model.LocalMediaPageLoader;
 import com.luck.picture.lib.permissions.PermissionChecker;
 import com.luck.picture.lib.thread.PictureThreadUtils;
@@ -61,7 +61,7 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
     protected boolean openWhiteStatusBar, numComplete;
     protected int colorPrimary, colorPrimaryDark;
     protected PictureLoadingDialog mLoadingDialog;
-    protected List<LocalMedia> selectionMedias;
+    protected List<LocalMedia> selectionMedias = new ArrayList<>();
     protected Handler mHandler = new Handler(Looper.getMainLooper());
     protected View container;
     /**
@@ -229,7 +229,10 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
      * init Config
      */
     private void initConfig() {
-        selectionMedias = config.selectionMedias == null ? new ArrayList<>() : config.selectionMedias;
+        if (config.selectionMedias != null) {
+            selectionMedias.clear();
+            selectionMedias.addAll(config.selectionMedias);
+        }
         if (PictureSelectionConfig.uiStyle != null) {
             openWhiteStatusBar = PictureSelectionConfig.uiStyle.picture_statusBarChangeTextColor;
             if (PictureSelectionConfig.uiStyle.picture_top_titleBarBackgroundColor != 0) {
@@ -333,9 +336,18 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
     /**
      * compressImage
      */
-    protected void compressImage(final List<LocalMedia> result) {
-        showPleaseDialog();
-        compressToLuban(result);
+    protected void compressImage(List<LocalMedia> result) {
+        if (PictureSelectionConfig.compressEngine != null) {
+            PictureSelectionConfig.compressEngine.onCompress(getContext(), result, new OnCallbackListener<List<LocalMedia>>() {
+                @Override
+                public void onCall(List<LocalMedia> result) {
+                    onResult(result);
+                }
+            });
+        } else {
+            showPleaseDialog();
+            compressToLuban(result);
+        }
     }
 
     /**
@@ -345,7 +357,7 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
      */
     private void compressToLuban(List<LocalMedia> result) {
         if (config.synOrAsy) {
-            PictureThreadUtils.executeByIo(new PictureThreadUtils.SimpleTask<List<File>>() {
+            PictureThreadUtils.executeBySingle(new PictureThreadUtils.SimpleTask<List<File>>() {
 
                 @Override
                 public List<File> doInBackground() throws Exception {
@@ -354,6 +366,7 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
                             .isCamera(config.camera)
                             .setTargetDir(config.compressSavePath)
                             .setCompressQuality(config.compressQuality)
+                            .isAutoRotating(config.isAutoRotating)
                             .setFocusAlpha(config.focusAlpha)
                             .setNewCompressFileName(config.renameCompressFileName)
                             .ignoreBy(config.minimumCompressSize).get();
@@ -375,6 +388,7 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
                     .isCamera(config.camera)
                     .setCompressQuality(config.compressQuality)
                     .setTargetDir(config.compressSavePath)
+                    .isAutoRotating(config.isAutoRotating)
                     .setFocusAlpha(config.focusAlpha)
                     .setNewCompressFileName(config.renameCompressFileName)
                     .setCompressListener(new OnCompressListener() {
@@ -409,7 +423,7 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
         boolean isAndroidQ = SdkVersionUtils.checkedAndroid_Q();
         int size = images.size();
         if (files.size() == size) {
-            for (int i = 0, j = size; i < j; i++) {
+            for (int i = 0; i < size; i++) {
                 File file = files.get(i);
                 if (file == null) {
                     continue;
@@ -436,8 +450,7 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
      * @param result
      */
     protected void handlerResult(List<LocalMedia> result) {
-        if (config.isCompress
-                && !config.isCheckOriginalImage) {
+        if (config.isCompress) {
             compressImage(result);
         } else {
             onResult(result);
@@ -468,12 +481,13 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
     /**
      * Insert the image into the camera folder
      *
-     * @param path
+     * @param firstPath
+     * @param firstMimeType
      * @param imageFolders
      * @return
      */
-    protected LocalMediaFolder getImageFolder(String path, String realPath, List<LocalMediaFolder> imageFolders) {
-        File imageFile = new File(PictureMimeType.isContent(path) ? realPath : path);
+    protected LocalMediaFolder getImageFolder(String firstPath, String realPath, String firstMimeType, List<LocalMediaFolder> imageFolders) {
+        File imageFile = new File(PictureMimeType.isContent(firstPath) ? realPath : firstPath);
         File folderFile = imageFile.getParentFile();
         for (LocalMediaFolder folder : imageFolders) {
             if (folderFile != null && folder.getName().equals(folderFile.getName())) {
@@ -482,7 +496,8 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
         }
         LocalMediaFolder newFolder = new LocalMediaFolder();
         newFolder.setName(folderFile != null ? folderFile.getName() : "");
-        newFolder.setFirstImagePath(path);
+        newFolder.setFirstImagePath(firstPath);
+        newFolder.setFirstMimeType(firstMimeType);
         imageFolders.add(newFolder);
         return newFolder;
     }
@@ -493,15 +508,11 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
      * @param images
      */
     protected void onResult(List<LocalMedia> images) {
-        boolean isAndroidQ = SdkVersionUtils.checkedAndroid_Q();
-        if (isAndroidQ && config.isAndroidQTransform) {
-            showPleaseDialog();
+        if (SdkVersionUtils.checkedAndroid_Q() && config.isAndroidQTransform) {
             onResultToAndroidAsy(images);
         } else {
             dismissDialog();
-            if (config.camera
-                    && config.selectionMode == PictureConfig.MULTIPLE
-                    && selectionMedias != null) {
+            if (config.camera && config.selectionMode == PictureConfig.MULTIPLE) {
                 images.addAll(images.size() > 0 ? images.size() - 1 : 0, selectionMedias);
             }
             if (config.isCheckOriginalImage) {
@@ -528,7 +539,65 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
      * @param images
      */
     private void onResultToAndroidAsy(List<LocalMedia> images) {
-        PictureThreadUtils.executeByIo(new PictureThreadUtils.SimpleTask<List<LocalMedia>>() {
+        int size = images.size();
+        boolean isNextCopyAndroidQToPath = false;
+        for (int i = 0; i < size; i++) {
+            LocalMedia media = images.get(i);
+            if (media == null || TextUtils.isEmpty(media.getPath())) {
+                continue;
+            }
+            if (config.isCheckOriginalImage || (!media.isCut() && !media.isCompressed() && TextUtils.isEmpty(media.getAndroidQToPath()))) {
+                isNextCopyAndroidQToPath = true;
+                break;
+            }
+        }
+        if (isNextCopyAndroidQToPath) {
+            startThreadCopySandbox(images);
+        } else {
+            normalResult(images);
+        }
+    }
+
+    /**
+     * normal return result
+     *
+     * @param images
+     */
+    private void normalResult(List<LocalMedia> images) {
+        int size = images.size();
+        for (int i = 0; i < size; i++) {
+            LocalMedia media = images.get(i);
+            if (media == null || TextUtils.isEmpty(media.getPath())) {
+                continue;
+            }
+            if (media.isCut() && media.isCompressed()) {
+                media.setAndroidQToPath(media.getCompressPath());
+            }
+            if (config.isCheckOriginalImage) {
+                media.setOriginal(true);
+                media.setOriginalPath(media.getAndroidQToPath());
+            }
+        }
+        if (config.camera && config.selectionMode == PictureConfig.MULTIPLE) {
+            images.addAll(images.size() > 0 ? images.size() - 1 : 0, selectionMedias);
+        }
+        if (PictureSelectionConfig.listener != null) {
+            PictureSelectionConfig.listener.onResult(images);
+        } else {
+            Intent intent = PictureSelector.putIntentResult(images);
+            setResult(RESULT_OK, intent);
+        }
+        exit();
+    }
+
+    /**
+     * start thread copy file to Sandbox
+     *
+     * @param images
+     */
+    private void startThreadCopySandbox(List<LocalMedia> images) {
+        showPleaseDialog();
+        PictureThreadUtils.executeBySingle(new PictureThreadUtils.SimpleTask<List<LocalMedia>>() {
             @Override
             public List<LocalMedia> doInBackground() {
                 int size = images.size();
@@ -537,21 +606,27 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
                     if (media == null || TextUtils.isEmpty(media.getPath())) {
                         continue;
                     }
-                    boolean isCopyAndroidQToPath = !media.isCut()
-                            && !media.isCompressed()
-                            && TextUtils.isEmpty(media.getAndroidQToPath());
+                    boolean isCopyAndroidQToPath = !media.isCut() && !media.isCompressed() && TextUtils.isEmpty(media.getAndroidQToPath());
+                    boolean isCopyPath = false;
                     if (isCopyAndroidQToPath && PictureMimeType.isContent(media.getPath())) {
                         if (!PictureMimeType.isHasHttp(media.getPath())) {
-                            String AndroidQToPath = AndroidQTransformUtils.copyPathToAndroidQ(getContext(),
+                            String AndroidQToPath = AndroidQTransformUtils.copyPathToAndroidQ(getContext(), media.getId(),
                                     media.getPath(), media.getWidth(), media.getHeight(), media.getMimeType(), config.cameraFileName);
                             media.setAndroidQToPath(AndroidQToPath);
+                            isCopyPath = true;
                         }
                     } else if (media.isCut() && media.isCompressed()) {
                         media.setAndroidQToPath(media.getCompressPath());
                     }
                     if (config.isCheckOriginalImage) {
                         media.setOriginal(true);
-                        media.setOriginalPath(media.getAndroidQToPath());
+                        if (isCopyPath) {
+                            media.setOriginalPath(media.getAndroidQToPath());
+                        } else {
+                            String originalPath = AndroidQTransformUtils.copyPathToAndroidQ(getContext(), media.getId(),
+                                    media.getPath(), media.getWidth(), media.getHeight(), media.getMimeType(), config.cameraFileName);
+                            media.setOriginalPath(originalPath);
+                        }
                     }
                 }
                 return images;
@@ -561,9 +636,7 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
             public void onSuccess(List<LocalMedia> images) {
                 dismissDialog();
                 if (images != null) {
-                    if (config.camera
-                            && config.selectionMode == PictureConfig.MULTIPLE
-                            && selectionMedias != null) {
+                    if (config.camera && config.selectionMode == PictureConfig.MULTIPLE) {
                         images.addAll(images.size() > 0 ? images.size() - 1 : 0, selectionMedias);
                     }
                     if (PictureSelectionConfig.listener != null) {
@@ -617,15 +690,18 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
      * @param data
      */
     protected String getAudioPath(Intent data) {
-        if (data != null && config.chooseMode == PictureMimeType.ofAudio()) {
-            try {
-                Uri uri = data.getData();
-                if (uri != null) {
-                    return Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT ? uri.getPath() : MediaUtils.getAudioFilePathFromUri(getContext(), uri);
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
+        try {
+            Uri uri = data.getData();
+            if (uri == null) {
+                return "";
             }
+            if (PictureMimeType.isContent(uri.toString())) {
+                return uri.toString();
+            } else {
+                return uri.getPath();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
         return "";
     }
@@ -732,16 +808,36 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
      * start to camera audio
      */
     public void startOpenCameraAudio() {
-        if (PermissionChecker.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)) {
-            Intent cameraIntent = new Intent(MediaStore.Audio.Media.RECORD_SOUND_ACTION);
-            if (cameraIntent.resolveActivity(getPackageManager()) != null) {
-                config.cameraMimeType = PictureMimeType.ofAudio();
-                startActivityForResult(cameraIntent, PictureConfig.REQUEST_CAMERA);
+        try {
+            if (PermissionChecker.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)) {
+                Intent cameraIntent = new Intent(MediaStore.Audio.Media.RECORD_SOUND_ACTION);
+                if (cameraIntent.resolveActivity(getPackageManager()) != null) {
+                    config.cameraMimeType = PictureMimeType.ofAudio();
+                    if (SdkVersionUtils.checkedAndroid_Q()) {
+                        Uri audioUri = MediaUtils.createAudioUri(this, config.suffixType);
+                        if (audioUri == null) {
+                            ToastUtils.s(getContext(), "open is audio error，the uri is empty ");
+                            if (config.camera) {
+                                exit();
+                            }
+                            return;
+                        }
+                        config.cameraPath = audioUri.toString();
+                        cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, audioUri);
+                    }
+                    startActivityForResult(cameraIntent, PictureConfig.REQUEST_CAMERA);
+                } else {
+                    ToastUtils.s(getContext(), "System recording is not supported");
+                }
+            } else {
+                PermissionChecker.requestPermissions(this,
+                        new String[]{Manifest.permission.RECORD_AUDIO}, PictureConfig.APPLY_AUDIO_PERMISSIONS_CODE);
             }
-        } else {
-            PermissionChecker.requestPermissions(this,
-                    new String[]{Manifest.permission.RECORD_AUDIO}, PictureConfig.APPLY_AUDIO_PERMISSIONS_CODE);
+        } catch (Exception e) {
+            e.printStackTrace();
+            ToastUtils.s(getContext(), e.getMessage());
         }
+
     }
 
     /**
@@ -751,7 +847,7 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
         if (config != null) {
             PictureSelectionConfig.destroy();
             LocalMediaPageLoader.setInstanceNull();
-            PictureThreadUtils.cancel(PictureThreadUtils.getIoPool());
+            PictureThreadUtils.cancel(PictureThreadUtils.getSinglePool());
         }
     }
 
@@ -774,9 +870,10 @@ public abstract class PictureBaseActivity extends AppCompatActivity {
      * showPermissionsDialog
      *
      * @param isCamera
+     * @param permissions
      * @param errorMsg
      */
-    protected void showPermissionsDialog(boolean isCamera, String errorMsg) {
+    protected void showPermissionsDialog(boolean isCamera, String[] permissions, String errorMsg) {
 
     }
 
